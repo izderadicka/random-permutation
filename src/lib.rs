@@ -6,6 +6,7 @@ use log::debug;
 use num_bigint::BigUint;
 use num_integer::Integer;
 use num_traits::{Num, NumAssignOps, NumOps, One};
+use rand::Rng;
 
 pub struct Generator<T> {
     limit: T,
@@ -13,6 +14,24 @@ pub struct Generator<T> {
     multiplier: T,
     state: T,
     count: T,
+}
+
+
+/// Simple generation of permutation in memory using Fisher-Yates shuffles (also known as Knuth algorithm)
+/// generates numbers 1 to limit (inclusive)
+pub fn random_permutation<T>(limit: T) -> Vec<T> 
+where T: Integer+Clone,
+      usize: From<T>,
+{
+    let size: usize = limit.into();
+    let mut p: Vec<T> = Vec::with_capacity(size);
+    (1..=size).fold(T::one(), |item, _| {p.push(item.clone()); item + T::one()});
+    let mut rng = rand::thread_rng();
+    for i in 0..(size-1) {
+        let j = i+ rng.gen_range(0..size-i);
+        p.swap(i, j)
+    }
+    p
 }
 
 impl<T> Generator<T>
@@ -286,5 +305,15 @@ mod tests {
         let fg = Generator::with_limit_and_state(p.clone(), g, bi("999").unwrap(), bi("1000").unwrap());
         let nums: HashSet<_> = fg.collect();
         assert_eq!(999, nums.len());
+    }
+
+    #[test]
+    fn test_random_permutation() {
+        let p = random_permutation(100u8);
+        let nums: HashSet<_> = p.into_iter().collect();
+        assert_eq!(100, nums.len());
+        assert!(nums.iter().all(|x| *x >= 1 && *x <= 100))
+
+
     }
 }

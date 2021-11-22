@@ -2,8 +2,8 @@ use std::process::exit;
 
 use anyhow::{Error, Result, bail};
 use log::debug;
-use num_bigint::{BigInt, BigUint};
-use num_traits::{Num, One};
+use num_bigint::{BigUint};
+use num_traits::{One};
 use random_permutation::*;
 use structopt::StructOpt;
 
@@ -16,7 +16,7 @@ enum Actions {
         #[structopt(short = "b", long, help = "Use bigint - no upper limit, but slower (app. 7x)")]
         use_bigint: bool,
     },
-    #[structopt(help="Prints permutation")]
+    #[structopt(help="Prints psedorandom permutation")]
     Permutation {
         #[structopt(required = true, help = "Multiplier - must be primitive root of modulo parameter")]
         multiplier: String,
@@ -26,6 +26,16 @@ enum Actions {
         seed: Option<String>,
         #[structopt(short, long, help = "Upper limit for permutation, must be smaller then modulo")]
         upper_limit: Option<String>,
+        #[structopt(short, long, help = "Print only first x numbers")]
+        take: Option<usize> 
+    },
+
+    #[structopt(help="Prints random using Fisher-Yates and CSPRG")]
+    RandomPermutation {
+        #[structopt(required=true, help = "Max element in permutation - permutating 1..=this")]
+        upper_limit: usize,
+        #[structopt(short, long, help = "Seed value, must be smaller then modulo")]
+        seed: Option<String>,
         #[structopt(short, long, help = "Print only first x numbers")]
         take: Option<usize> 
     }
@@ -90,6 +100,14 @@ fn main() -> Result<()> {
             let gen = Generator::with_limit_and_state(modulo, multiplier, seed, limit);
             gen.take(take).enumerate().for_each(|(idx,n)| println!("{}:{}", idx+1,n));
         },
+        Actions::RandomPermutation { upper_limit, seed, take } => {
+            let p = random_permutation(upper_limit);
+            let sz = p.len();
+            p.into_iter().take(take.unwrap_or(sz))
+                .enumerate().for_each(|(idx,i)| println!("{}:{}", idx, i))
+        }
+
+        
     }
     Ok(())
 }
