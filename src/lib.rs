@@ -132,7 +132,7 @@ where
 }
 
 /// finds bigest primitive root for given n
-/// n must be prime
+/// n must be prime bigger then 7 - small primes are not interesting for this use case
 pub fn find_primitive_root<N>(p: N) -> Option<N>
 where
     for<'a> N: Integer + Clone + NumOps<&'a N> + NumAssignOps<&'a N> + NumAssignOps<N> + Display+Debug,
@@ -144,7 +144,7 @@ where
     let mut divs = Vec::new();
     let mut i = N::one() + N::one();
     let giga =
-        N::from_str_radix("1000000000", 10).unwrap_or_else(|_| panic!("number conversion error"));
+        N::from_str_radix("1000000000", 10).ok();
     while i.clone() * &i <= n {
         if n.is_multiple_of(&i) {
             debug!("Found factor : {}", i);
@@ -154,9 +154,10 @@ where
                 n /= &i;
             }
         }
-        if i.is_multiple_of(&giga) {
+        if let Some(ref giga) = giga {
+            if i.is_multiple_of(giga) {
             debug!("Processed 1G, remains {}", n.clone() / giga.clone());
-        }
+        }}
         i += N::one();
     }
     if n > N::one() {
@@ -189,10 +190,12 @@ where
     None
 }
 
-pub fn bi(s: impl AsRef<str>) -> Result<BigUint> {
-    BigUint::from_str_radix(s.as_ref(), 10)
+pub fn pi<T: Integer>(s: impl AsRef<str>) -> Result<T> {
+    T::from_str_radix(s.as_ref(), 10)
                     .map_err(|_| anyhow::Error::msg("Invalid lower_limit"))
 }
+
+
 
 #[cfg(test)]
 mod tests {
@@ -238,7 +241,7 @@ mod tests {
 
     #[test]
     fn test_prim_root() {
-        let n1 = 7u8;
+        let n1 = 13u8;
         let r1 = find_primitive_root(n1).expect("root exists");
         println!("Primitive root for {} is {}", n1, r1);
         assert!(is_root(r1, n1, (n1 - 1) as usize));
@@ -284,13 +287,13 @@ mod tests {
 
     #[test]
     fn test_bigint_generator() {
-        let p = bi("7138297498312732814783179").unwrap();
+        let p = pi("7138297498312732814783179").unwrap();
         assert!(prime::strong_check(&p));
         // TODO Why this number is not working if this is primitive root by definition
         //let g = bi("7138297498312732814783178").unwrap();
-        let g = bi("3569148749156366407391588").unwrap();
+        let g:BigUint = pi("3569148749156366407391588").unwrap();
         println!("diff {}", p.clone()-g.clone());
-        let fg = Generator::with_limit_and_state(p.clone(), g, bi("999").unwrap(), p);
+        let fg = Generator::with_limit_and_state(p.clone(), g, pi("999").unwrap(), p);
         let nums: HashSet<_> = fg.take(100000).collect();
         assert_eq!(100000, nums.len());
     }
@@ -298,11 +301,11 @@ mod tests {
     #[ignore]
     #[test]
     fn test_bigint_generator2() {
-        let p = bi("71382991").unwrap();
+        let p = pi("71382991").unwrap();
         assert!(prime::strong_check(&p));
-        let g = bi("71382986").unwrap();
+        let g: BigUint = pi("71382986").unwrap();
         println!("diff {}", p.clone()-g.clone());
-        let fg = Generator::with_limit_and_state(p.clone(), g, bi("999").unwrap(), bi("1000").unwrap());
+        let fg = Generator::with_limit_and_state(p.clone(), g, pi("999").unwrap(), pi("1000").unwrap());
         let nums: HashSet<_> = fg.collect();
         assert_eq!(999, nums.len());
     }

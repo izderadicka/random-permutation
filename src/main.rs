@@ -4,6 +4,7 @@ use anyhow::{Error, Result, bail};
 use log::debug;
 use num_bigint::{BigUint};
 use num_traits::{One};
+use rand::Rng;
 use random_permutation::*;
 use structopt::StructOpt;
 
@@ -27,7 +28,9 @@ enum Actions {
         #[structopt(short, long, help = "Upper limit for permutation, must be smaller then modulo")]
         upper_limit: Option<String>,
         #[structopt(short, long, help = "Print only first x numbers")]
-        take: Option<usize> 
+        take: Option<usize>, 
+        #[structopt(short = "b", long, help = "Use bigint - no upper limit, but slower (app. 2x)")]
+        use_bigint: bool,
     },
 
     #[structopt(help="Prints random using Fisher-Yates and CSPRG")]
@@ -54,7 +57,7 @@ fn main() -> Result<()> {
             use_bigint,
         } => {
             let (prime, generator) = if use_bigint {
-                let lower_limit = bi(&lower_limit)?;
+                let lower_limit: BigUint = pi(&lower_limit)?;
                 let prime = generate_prime(lower_limit)?;
                 debug!("Prime number is {}", prime);
                 let generator = find_primitive_root(prime.clone());
@@ -78,11 +81,18 @@ fn main() -> Result<()> {
                 }
             }
         }
-        Actions::Permutation { multiplier, modulo, seed, upper_limit , take} => {
-            let multiplier = bi(multiplier)?;
-            let modulo = bi(modulo)?;
-            let seed = flip(seed.map(|s| bi(s)))?.unwrap_or_else(BigUint::one);
-            let limit = flip(upper_limit.map(|s| bi(s)))?.unwrap_or_else(|| modulo.clone());
+        Actions::Permutation { multiplier, modulo, seed, upper_limit , take, use_bigint} => {
+
+            if use_bigint{
+
+            let multiplier = pi(multiplier)?;
+            let modulo: BigUint = pi(modulo)?;
+
+            let seed = flip(seed.map(|s| pi(s)))?.unwrap_or_else(|| {
+                let mut rng = rand::thread_rng();
+                rng.gen_range(BigUint::one()..modulo.clone())
+            });
+            let limit = flip(upper_limit.map(|s| pi(s)))?.unwrap_or_else(|| modulo.clone());
             let take = take.unwrap_or(usize::MAX);
             
             if multiplier>=modulo || seed < BigUint::one() {
@@ -99,6 +109,33 @@ fn main() -> Result<()> {
 
             let gen = Generator::with_limit_and_state(modulo, multiplier, seed, limit);
             gen.take(take).enumerate().for_each(|(idx,n)| println!("{}:{}", idx+1,n));
+        } else {
+
+            let multiplier: u128 = pi(multiplier)?;
+            let modulo: u128 = pi(modulo)?;
+            let seed = flip(seed.map(|s| pi(s)))?.unwrap_or_else(|| {
+                let mut rng = rand::thread_rng();
+                rng.gen_range(1..modulo)
+            });
+            let limit = flip(upper_limit.map(|s| pi(s)))?.unwrap_or_else(|| modulo.clone());
+            let take = take.unwrap_or(usize::MAX);
+            
+            if multiplier>=modulo || seed < 1 {
+                bail!("Invalid multiplier, must be positive and less then modulo")
+            }
+
+            if seed>=modulo || seed < 1 {
+                bail!("Invalid seed, must be positive and less then modulo")
+            }
+
+            if limit>modulo || seed <= 1 {
+                bail!("Invalid limit, must be bigger then 1 and less then  or equal to modulo")
+            }
+
+            let gen = Generator::with_limit_and_state(modulo, multiplier, seed, limit);
+            gen.take(take).enumerate().for_each(|(idx,n)| println!("{}:{}", idx+1,n));
+
+        }
         },
         Actions::RandomPermutation { upper_limit, seed, take } => {
             let p = random_permutation(upper_limit);
