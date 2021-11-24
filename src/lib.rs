@@ -6,7 +6,7 @@ use log::debug;
 use num_bigint::BigUint;
 use num_integer::Integer;
 use num_traits::{Num, NumAssignOps, NumOps, One};
-use rand::Rng;
+use rand::{Rng, SeedableRng};
 
 pub struct Generator<T> {
     limit: T,
@@ -16,19 +16,54 @@ pub struct Generator<T> {
     count: T,
 }
 
+enum RandGen {
+    Seeded(rand::rngs::StdRng),
+    Unseeded(rand::rngs::ThreadRng),
+}
+
+impl RandGen {
+    fn new(seed: Option<impl AsRef<[u8]>>) -> Self {
+        match seed {
+            Some(s) => {
+                let mut seed = [0u8; 32];
+                let bytes = s.as_ref();
+                let sz = seed.len().min(bytes.len());
+                seed[..sz].copy_from_slice(&bytes[..sz]);
+                RandGen::Seeded(rand::rngs::StdRng::from_seed(seed))
+            }
+            None => RandGen::Unseeded(rand::thread_rng()),
+        }
+    }
+
+    fn gen_range<T, R>(&mut self, range: R) -> T
+    where
+        T: rand::distributions::uniform::SampleUniform,
+        R: rand::distributions::uniform::SampleRange<T>,
+    {
+        match self {
+            RandGen::Seeded(r) => r.gen_range(range),
+            RandGen::Unseeded(r) => r.gen_range(range),
+        }
+    }
+}
 
 /// Simple generation of permutation in memory using Fisher-Yates shuffles (also known as Knuth algorithm)
 /// generates numbers 1 to limit (inclusive)
-pub fn random_permutation<T>(limit: T) -> Vec<T> 
-where T: Integer+Clone,
-      usize: From<T>,
+pub fn random_permutation<T, S>(limit: T, seed: Option<S>) -> Vec<T>
+where
+    T: Integer + Clone,
+    usize: From<T>,
+    S: AsRef<[u8]>,
 {
     let size: usize = limit.into();
     let mut p: Vec<T> = Vec::with_capacity(size);
-    (1..=size).fold(T::one(), |item, _| {p.push(item.clone()); item + T::one()});
-    let mut rng = rand::thread_rng();
-    for i in 0..(size-1) {
-        let j = i+ rng.gen_range(0..size-i);
+    (1..=size).fold(T::one(), |item, _| {
+        p.push(item.clone());
+        item + T::one()
+    });
+    let mut rng = RandGen::new(seed);
+    for i in 0..(size - 1) {
+        let j = i + rng.gen_range(0..size - i);
         p.swap(i, j)
     }
     p
@@ -107,7 +142,7 @@ fn generate_prime_int(limit: impl Into<BigUint>) -> BigUint {
     }
 }
 
-pub fn powmod<N>(mut x: N, mut y: N, p: &N) -> N
+fn powmod<N>(mut x: N, mut y: N, p: &N) -> N
 where
     for<'a> N: Integer + Clone + NumOps<&'a N> + NumAssignOps<&'a N> + NumAssignOps<N>,
 {
@@ -135,7 +170,8 @@ where
 /// n must be prime bigger then 7 - small primes are not interesting for this use case
 pub fn find_primitive_root<N>(p: N) -> Option<N>
 where
-    for<'a> N: Integer + Clone + NumOps<&'a N> + NumAssignOps<&'a N> + NumAssignOps<N> + Display+Debug,
+    for<'a> N:
+        Integer + Clone + NumOps<&'a N> + NumAssignOps<&'a N> + NumAssignOps<N> + Display + Debug,
 {
     let phi = p.clone() - N::one();
     let mut n = phi.clone();
@@ -143,8 +179,7 @@ where
     // Find prime factors
     let mut divs = Vec::new();
     let mut i = N::one() + N::one();
-    let giga =
-        N::from_str_radix("1000000000", 10).ok();
+    let giga = N::from_str_radix("1000000000", 10).ok();
     while i.clone() * &i <= n {
         if n.is_multiple_of(&i) {
             debug!("Found factor : {}", i);
@@ -156,18 +191,19 @@ where
         }
         if let Some(ref giga) = giga {
             if i.is_multiple_of(giga) {
-            debug!("Processed 1G, remains {}", n.clone() / giga.clone());
-        }}
+                debug!("Processed 1G, remains {}", n.clone() / giga.clone());
+            }
+        }
         i += N::one();
     }
     if n > N::one() {
         divs.push(n)
     }
 
-    debug!("Found  {} prime factors : {:?}", divs.len(), divs );
+    debug!("Found  {} prime factors : {:?}", divs.len(), divs);
 
     let two = N::one() + N::one();
-    let max = phi.clone()-N::one();
+    let max = phi.clone() - N::one();
     let mut res = max / &two; // start app from middle
     while res >= two {
         let mut ok: bool = true;
@@ -191,11 +227,8 @@ where
 }
 
 pub fn pi<T: Integer>(s: impl AsRef<str>) -> Result<T> {
-    T::from_str_radix(s.as_ref(), 10)
-                    .map_err(|_| anyhow::Error::msg("Invalid lower_limit"))
+    T::from_str_radix(s.as_ref(), 10).map_err(|_| anyhow::Error::msg("Invalid lower_limit"))
 }
-
-
 
 #[cfg(test)]
 mod tests {
@@ -291,8 +324,8 @@ mod tests {
         assert!(prime::strong_check(&p));
         // TODO Why this number is not working if this is primitive root by definition
         //let g = bi("7138297498312732814783178").unwrap();
-        let g:BigUint = pi("3569148749156366407391588").unwrap();
-        println!("diff {}", p.clone()-g.clone());
+        let g: BigUint = pi("3569148749156366407391588").unwrap();
+        println!("diff {}", p.clone() - g.clone());
         let fg = Generator::with_limit_and_state(p.clone(), g, pi("999").unwrap(), p);
         let nums: HashSet<_> = fg.take(100000).collect();
         assert_eq!(100000, nums.len());
@@ -304,19 +337,18 @@ mod tests {
         let p = pi("71382991").unwrap();
         assert!(prime::strong_check(&p));
         let g: BigUint = pi("71382986").unwrap();
-        println!("diff {}", p.clone()-g.clone());
-        let fg = Generator::with_limit_and_state(p.clone(), g, pi("999").unwrap(), pi("1000").unwrap());
+        println!("diff {}", p.clone() - g.clone());
+        let fg =
+            Generator::with_limit_and_state(p.clone(), g, pi("999").unwrap(), pi("1000").unwrap());
         let nums: HashSet<_> = fg.collect();
         assert_eq!(999, nums.len());
     }
 
     #[test]
     fn test_random_permutation() {
-        let p = random_permutation(100u8);
+        let p = random_permutation::<_, &str>(100u8, None);
         let nums: HashSet<_> = p.into_iter().collect();
         assert_eq!(100, nums.len());
         assert!(nums.iter().all(|x| *x >= 1 && *x <= 100))
-
-
     }
 }
